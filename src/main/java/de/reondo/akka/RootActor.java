@@ -16,6 +16,7 @@ public class RootActor extends AbstractActor {
     LoggingAdapter log = Logging.getLogger(getContext().getSystem(), this);
     private ActorRef c1;
     private ActorRef c2;
+    private ActorRef eventListener;
 
     public static Props props() {
         return Props.create(RootActor.class, () -> new RootActor());
@@ -24,15 +25,24 @@ public class RootActor extends AbstractActor {
     public static class Start {
     }
 
+    public static class Pub {
+        public final String message;
+
+        public Pub(String message) {
+            this.message = message;
+        }
+    }
+
     @Override
     public void preStart() {
         log.info("Starting RootActor");
-        c1 = createChild("C1");
-        c2 = createChild("C2");
+        c1 = createChild(ChildActor.props(), "C1");
+        c2 = createChild(ChildActor.props(), "C2");
+        eventListener = createChild(EventListenerActor.props(), "EventListener");
     }
 
-    private ActorRef createChild(String name) {
-        ActorRef c = getContext().actorOf(ChildActor.props(), name);
+    private ActorRef createChild(Props props, String name) {
+        ActorRef c = getContext().actorOf(props, name);
         getContext().watch(c);
         return c;
     }
@@ -68,14 +78,18 @@ public class RootActor extends AbstractActor {
     private void onTerminated(Terminated t) {
         log.info("Child {} died", t.getActor());
         if (t.getActor().equals(c1)) {
-            c1 = createChild("C1");
+            c1 = createChild(ChildActor.props(), "C1");
         } else if (t.getActor().equals(c2)) {
-            c2 = createChild("C2");
+            c2 = createChild(ChildActor.props(), "C2");
+        } else {
+            log.info("Won't bring child back to life");
         }
     }
 
     private void onMessage(String message) {
-        if (message.startsWith("C1:")) {
+        if (message.startsWith("pub:")) {
+            getContext().getSystem().eventStream().publish(new Pub(message.substring(4)));
+        } else if (message.startsWith("C1:")) {
             c1.tell(message.substring(3), getSelf());
         } else if (message.startsWith("C2:")) {
             c2.tell(message.substring(3), getSelf());
